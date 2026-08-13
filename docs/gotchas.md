@@ -1,7 +1,7 @@
 # Gotchas
 
 Production constraints that are NOT visible in the binary — from code and the
-domain CLAUDE.md.
+domain README.md.
 
 - **`git` is a runtime dependency.** The backend clones/refreshes the registry
   repo (`LXS_REGISTRY_CACHE`). If `git` is missing, startup refresh fails
