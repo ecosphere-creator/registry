@@ -61,3 +61,17 @@ img { max-width:100%; }
 .foot-inner { width:min(1080px,calc(100% - 48px)); margin:auto; padding:24px 0; color:var(--color-muted); font-size:13px; }
 .foot p { margin:0; }
 @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+
+/* LXS docs bundle */
+.status.docs { background:var(--color-brand); color:#fff; }
+.docs { margin-top:34px; padding:20px; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-surface); }
+.docs h3 { margin:0 0 8px; }
+.doc-meta { color:var(--color-muted); font-size:13px; }
+.docs .compose { margin-top:14px; }
+.docs .compose b { display:block; color:var(--color-brand); font:500 11px var(--font-mono); letter-spacing:.08em; margin-bottom:8px; }
+.docs details { margin-top:12px; border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden; }
+.docs summary { padding:10px 14px; cursor:pointer; font-weight:600; font-size:13px; }
+.docs summary:hover { background:var(--color-surface-raised); }
+.docs pre { margin:0; padding:14px; border-top:1px solid var(--color-border); background:var(--color-surface-raised); font:12px/1.6 var(--font-mono); white-space:pre-wrap; word-break:break-word; max-height:420px; overflow:auto; }
+.doc-note { margin:16px 0 0; color:var(--color-muted); font-size:13px; }
+.doc-note code { font-family:var(--font-mono); background:var(--color-surface-raised); padding:1px 5px; border-radius:4px; }

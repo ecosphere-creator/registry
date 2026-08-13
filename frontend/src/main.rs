@@ -66,7 +66,8 @@ fn BrowsePage() -> impl IntoView {
             return '<article class="lxs-card">' +
               '<div class="card-head"><h3><a href="/lxs/' + esc(m.name) + '">' + esc(m.name) + '</a></h3>' +
               '<span class="ver">v' + esc(m.version) + '</span><span class="cat">' + esc(m.category) + '</span>' +
-              '<span class="status ' + esc(m.status) + '">' + esc(m.status) + '</span></div>' +
+              '<span class="status ' + esc(m.status) + '">' + esc(m.status) + '</span>' +
+              (m.docs_available ? '<span class="status docs">docs</span>' : "") + '</div>' +
               '<p class="sum">' + esc(m.summary) + '</p>' +
               '<p class="meta">' + esc(m.runtime || "self-contained") + ' · ' + esc(m.publisher || "") + ' · ' + archs + '</p>' +
               (m.source ? '<a class="src" href="' + esc(m.source.replace(".git","")) + '" target="_blank" rel="noopener">View source ↗</a>' : "") +
@@ -116,6 +117,23 @@ fn DetailPage(name: String) -> impl IntoView {
       var esc = function (v) { return String(v || "").replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]; }); };
       fetch(api).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
         if (!d) { root.innerHTML = '<p class="empty">LXS not found.</p>'; return; }
+        var docs = d.docs || null;
+        var hasDocs = docs && docs.files && docs.files.length > 0;
+        var reqEnv = (d.contract && d.contract.env && d.contract.env.required || []).map(esc).join(", ");
+        var compose = '# ecompose.yml\nservices:\n  ' + (d.name || "svc") + '-backend:\n    lxs: ' + esc(d.name || "") + '@' + esc(d.version || "") + '\n    grants:\n      secrets: [' + reqEnv + ']   # must cover contract.env.required';
+        var docsHtml = hasDocs ?
+          '<div class="docs">' +
+            '<h3>Docs bundle</h3>' +
+            '<p class="doc-meta">Ships with this version: ' + docs.files.map(esc).join(" · ") + (docs.has_openapi ? ' · openapi.json' : '') + '</p>' +
+            '<div class="compose"><b>Compose</b><pre>' + esc(compose) + '</pre></div>' +
+            '<details open><summary>Overview — README.md</summary><pre>' + esc(docs.index || "") + '</pre></details>' +
+            '<details><summary>API reference — api.md</summary><pre>' + esc(docs.api || "") + '</pre></details>' +
+            '<details><summary>Examples — examples.sh</summary><pre>' + esc(docs.examples || "") + '</pre></details>' +
+            '<details><summary>Changelog</summary><pre>' + esc(docs.changelog || "") + '</pre></details>' +
+            '<details><summary>Gotchas</summary><pre>' + esc(docs.gotchas || "") + '</pre></details>' +
+            '<p class="doc-note">For AI agents: this LXS ships as a <b>binary only</b> — these docs are the entire interface. Run <code>examples.sh</code> against a pulled binary before trusting behavior.</p>' +
+          '</div>' :
+          '<p class="empty">No docs bundle for this version yet.</p>';
         root.innerHTML =
           '<p class="kicker">' + esc(d.category || "Uncategorized") + ' · v' + esc(d.version) + ' · ' + esc(d.status || "unverified") + '</p>' +
           '<h1>' + esc(d.name) + '</h1>' +
@@ -132,7 +150,8 @@ fn DetailPage(name: String) -> impl IntoView {
           '<p><b>Commit:</b> <code>' + esc(d.provenance && d.provenance.commit || "") + '</code></p>' +
           '<p><b>Built by:</b> ' + esc(d.provenance && d.provenance.built_by || "") + ' · ' + esc(d.provenance && d.provenance.built_at || "") + '</p>' +
           '<p><b>Versions:</b> ' + (d.versions || []).map(function (v) { return esc(v); }).join(", ") + '</p>' +
-          '</div>';
+          '</div>' +
+          docsHtml;
       }).catch(function () { root.innerHTML = '<p class="empty">Could not reach the LXS registry API.</p>'; });
     })();"##;
     view! {

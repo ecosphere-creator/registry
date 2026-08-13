@@ -184,6 +184,18 @@ struct LxsCard {
     targets: Vec<String>,
     source: String,
     commit: String,
+    docs_available: bool,
+}
+
+#[derive(Serialize)]
+struct LxsDocs {
+    files: Vec<String>,
+    has_openapi: bool,
+    index: String,
+    api: String,
+    examples: String,
+    changelog: String,
+    gotchas: String,
 }
 
 #[derive(Serialize)]
@@ -201,6 +213,31 @@ struct LxsDetail {
     provenance: Provenance,
     release: Vec<String>,
     versions: Vec<String>,
+    docs: Option<LxsDocs>,
+}
+
+fn load_docs(cache: &Path, name: &str, version: &str) -> Option<LxsDocs> {
+    let dir = cache.join(name).join(version).join("docs");
+    if !dir.is_dir() {
+        return None;
+    }
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
+    let mut files: Vec<String> = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    files.sort();
+    Some(LxsDocs {
+        has_openapi: dir.join("openapi.json").is_file(),
+        index: read("README.md"),
+        api: read("api.md"),
+        examples: read("examples.sh"),
+        changelog: read("changelog.md"),
+        gotchas: read("gotchas.md"),
+        files,
+    })
 }
 
 fn latest_by_name(manifests: &[LxsManifest]) -> HashMap<String, &LxsManifest> {
@@ -265,6 +302,7 @@ async fn list_lxs(state: web::Data<AppState>, query: web::Query<HashMap<String, 
             targets: m.targets.clone(),
             source: m.provenance.source.clone(),
             commit: m.provenance.commit.clone(),
+            docs_available: state.cache.join(&m.name).join(&m.version).join("docs").is_dir(),
         })
         .collect();
     cards.sort_by(|a, b| a.name.cmp(&b.name));
@@ -306,6 +344,7 @@ async fn detail(state: web::Data<AppState>, path: web::Path<String>) -> HttpResp
         provenance: latest.provenance.clone(),
         release,
         versions: all_versions,
+        docs: load_docs(&state.cache, &name, &latest.version),
     };
     HttpResponse::Ok().json(detail)
 }

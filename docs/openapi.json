@@ -1,0 +1,179 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "registry — LXS Registry API",
+    "description": "Browse and categorize versioned Linux Services from the getecosphere/lxs-registry repository, including each version's docs bundle.",
+    "version": "1.0.1"
+  },
+  "paths": {
+    "/api/lxs": {
+      "get": {
+        "summary": "List latest version of every LXS",
+        "operationId": "listLxs",
+        "parameters": [
+          { "name": "category", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Filter by category" },
+          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Search name/domain/summary" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest LXS cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lxs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "version": { "type": "string" },
+                          "category": { "type": "string" },
+                          "status": { "type": "string" },
+                          "publisher": { "type": "string" },
+                          "summary": { "type": "string" },
+                          "runtime": { "type": "string" },
+                          "targets": { "type": "array", "items": { "type": "string" } },
+                          "source": { "type": "string" },
+                          "commit": { "type": "string" },
+                          "docs_available": { "type": "boolean" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lxs/categories": {
+      "get": {
+        "summary": "Category names with LXS counts",
+        "operationId": "listCategories",
+        "responses": {
+          "200": {
+            "description": "Category counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "count": { "type": "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lxs/{name}": {
+      "get": {
+        "summary": "Detail for one LXS (contract, runtime, provenance, versions, docs)",
+        "operationId": "getLxsDetail",
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "LXS detail including docs bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "domain": { "type": "string" },
+                    "version": { "type": "string" },
+                    "category": { "type": "string" },
+                    "status": { "type": "string" },
+                    "publisher": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "targets": { "type": "array", "items": { "type": "string" } },
+                    "contract": {
+                      "type": "object",
+                      "properties": {
+                        "version": { "type": "integer" },
+                        "api": { "type": "string" },
+                        "db": { "type": "string" },
+                        "env": {
+                          "type": "object",
+                          "properties": {
+                            "required": { "type": "array", "items": { "type": "string" } },
+                            "optional": { "type": "array", "items": { "type": "string" } }
+                          }
+                        },
+                        "network": {
+                          "type": "object",
+                          "properties": {
+                            "inbound": { "type": "array", "items": { "type": "string" } },
+                            "outbound": { "type": "array", "items": { "type": "string" } }
+                          }
+                        }
+                      }
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "properties": {
+                        "base": { "type": "string" },
+                        "libc": { "type": "string" },
+                        "dependencies": { "type": "array", "items": { "type": "string" } }
+                      }
+                    },
+                    "provenance": {
+                      "type": "object",
+                      "properties": {
+                        "source": { "type": "string" },
+                        "commit": { "type": "string" },
+                        "built_by": { "type": "string" },
+                        "built_at": { "type": "string" }
+                      }
+                    },
+                    "versions": { "type": "array", "items": { "type": "string" } },
+                    "docs": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "files": { "type": "array", "items": { "type": "string" } },
+                        "has_openapi": { "type": "boolean" },
+                        "index": { "type": "string" },
+                        "api": { "type": "string" },
+                        "examples": { "type": "string" },
+                        "changelog": { "type": "string" },
+                        "gotchas": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown LXS name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
