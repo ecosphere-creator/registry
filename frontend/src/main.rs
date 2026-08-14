@@ -166,7 +166,11 @@ async fn render_detail(Path(name): Path<String>) -> axum::response::Response<Bod
 
 #[tokio::main]
 async fn main() {
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8261);
+    let port: u16 = std::env::var("SERVER_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .or_else(|| std::env::var("PORT").ok().and_then(|p| p.parse().ok()))
+        .unwrap_or(8261);
     let app = Router::new()
         .route("/", get(render_app_to_stream(|| view! { <App route=Route::Browse name=String::new() /> })))
         .route("/lxs/:name", get(render_detail))
