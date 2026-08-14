@@ -3,16 +3,18 @@
 ## Capability
 
 Browses and categorizes the public LXS registry (`getecosphere/lxs-registry`).
-Serves a JSON API of every versioned Linux Service: latest-version cards with
-category counts, plus a per-name detail view that includes the full contract,
-runtime, provenance, release history, **and the docs bundle shipped with each
-version**. If you need to list/search LXS packages and inspect their
-contracts/docs, this is the LXS.
+A **single binary** serves both the browse UI (SSR homepage at `/` and detail at
+`/lxs/:name`) and the JSON API of every versioned Linux Service: latest-version
+cards with category counts, plus a per-name detail view that includes the full
+contract, runtime, provenance, release history, **and the docs bundle shipped
+with each version**. If you need to list/search LXS packages, inspect their
+contracts/docs, or browse the registry as a website, this is the LXS.
 
 ## What it owns / never owns
 
 - **Owns:** reading + refreshing the registry git clone, parsing `lxs.yml`,
-  latest-version aggregation, category counts, serving docs contents.
+  latest-version aggregation, category counts, serving docs contents, rendering
+  the browse UI (SSR).
 - **Never owns:** the binaries/manifests themselves, publishing/auth, or any
   persistence — it is stateless.
 
@@ -21,8 +23,8 @@ contracts/docs, this is the LXS.
 ```yaml
 # ecompose.yml
 services:
-  lxs-registry-backend:
-    lxs: registry@1.0.1
+  lxs-registry:
+    lxs: registry@1.0.2
     grants:
       secrets: [SERVER_PORT, LXS_REGISTRY_CACHE]
     shared_tools: [git]   # runtime dependency for clone/refresh
@@ -31,14 +33,17 @@ services:
 ## Quick usage
 
 ```sh
+# browse UI (SSR)
+curl http://127.0.0.1:8261/
+
 # list latest version of every LXS (cards include docs_available)
-curl http://127.0.0.1:8260/api/lxs
+curl http://127.0.0.1:8261/api/lxs
 
 # detail for one LXS — contract + runtime + provenance + docs bundle
-curl http://127.0.0.1:8260/api/lxs/storage
+curl http://127.0.0.1:8261/api/lxs/storage
 
 # category counts
-curl http://127.0.0.1:8260/api/lxs/categories
+curl http://127.0.0.1:8261/api/lxs/categories
 ```
 
 ## Docs index

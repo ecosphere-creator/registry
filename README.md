@@ -45,5 +45,6 @@ This LXS ships as a binary only; `docs/` is the entire consumer interface.
 
 ## Runtime
 
-- Rust (Actix 4), self-contained static binary (musl), `git` runtime dependency
-  for clone/refresh. Refreshes the registry clone every 10 minutes.
+- Rust (axum + Leptos SSR), self-contained static binary (musl), `git` runtime dependency
+  for clone/refresh. Serves the browse UI and `/api/*` from one process.
+  Refreshes the registry clone every 10 minutes.

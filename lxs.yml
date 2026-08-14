@@ -1,11 +1,11 @@
 name: registry
 domain: registry
-version: 1.0.1
+version: 1.0.2
 category: Infrastructure
 publisher: getecosphere
 status: unverified
 license: mit
-summary: "LXS Registry — browse and categorize versioned Linux Services from the getecosphere/lxs-registry repository"
+summary: "LXS Registry — browse and categorize versioned Linux Services from the getecosphere/lxs-registry repository (single binary serves the browse UI and the JSON API)"
 
 targets:
   - linux/amd64
@@ -14,7 +14,7 @@ artifacts: {}
 
 contract:
   version: 1
-  api: "registry REST API (/api/lxs, /api/lxs/categories, /api/lxs/:name)"
+  api: "registry browse UI (/, /lxs/:name) + JSON API (/api/lxs, /api/lxs/categories, /api/lxs/:name)"
   env:
     required:
       - SERVER_PORT
