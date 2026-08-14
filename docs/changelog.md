@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+- Fix: an empty `LXS_REGISTRY_CACHE` env value now falls back to the default
+  `/var/lib/lxs-registry` instead of scanning the empty string (which made the
+  API return zero packages when `.env` declared `LXS_REGISTRY_CACHE=`).
+
 ## 1.0.2
 - **Single combined binary**: the browse UI (Leptos SSR) and the JSON API are
   now one LXS — `/` and `/lxs/:name` render the UI, `/api/*` serves the API, all

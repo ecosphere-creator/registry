@@ -515,7 +515,9 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .or_else(|| std::env::var("PORT").ok().and_then(|p| p.parse().ok()))
         .unwrap_or(8261);
-    let cache = PathBuf::from(std::env::var("LXS_REGISTRY_CACHE").unwrap_or_else(|_| "/var/lib/lxs-registry".to_string()));
+    let cache = PathBuf::from(
+        std::env::var("LXS_REGISTRY_CACHE").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "/var/lib/lxs-registry".to_string()),
+    );
     let state = AppState {
         cache,
         manifests: Arc::new(Mutex::new(Vec::new())),
