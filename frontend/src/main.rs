@@ -1,8 +1,352 @@
-use axum::{body::Body, extract::Path, http::Request, routing::get, Router};
+use axum::{body::Body, extract::{Path, Query, State}, http::Request, routing::get, Router};
 use leptos::prelude::*;
 use leptos::{component, view, IntoView};
 use leptos_axum::render_app_to_stream;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path as FsPath, PathBuf};
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 use tower_http::services::ServeDir;
+
+const REGISTRY_URL: &str = "https://github.com/getecosphere/lxs-registry.git";
+const REFRESH_INTERVAL: Duration = Duration::from_secs(600);
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct LxsManifest {
+    name: String,
+    #[serde(default)]
+    domain: String,
+    version: String,
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    publisher: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    targets: Vec<String>,
+    #[serde(default)]
+    contract: Contract,
+    #[serde(default)]
+    runtime: Runtime,
+    #[serde(default)]
+    provenance: Provenance,
+    #[serde(default)]
+    release: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Contract {
+    #[serde(default)]
+    version: u32,
+    #[serde(default)]
+    api: String,
+    #[serde(default)]
+    db: String,
+    #[serde(default)]
+    env: Env,
+    #[serde(default)]
+    network: Network,
+    #[serde(default)]
+    resources: Resources,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Env {
+    #[serde(default)]
+    required: Vec<String>,
+    #[serde(default)]
+    optional: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Network {
+    #[serde(default)]
+    inbound: Vec<String>,
+    #[serde(default)]
+    outbound: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Resources {
+    #[serde(default)]
+    memory: String,
+    #[serde(default)]
+    disk: String,
+    #[serde(default)]
+    startup_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Runtime {
+    #[serde(default)]
+    base: String,
+    #[serde(default)]
+    libc: String,
+    #[serde(default)]
+    dependencies: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Provenance {
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    commit: String,
+    #[serde(default)]
+    built_by: String,
+    #[serde(default)]
+    built_at: String,
+}
+
+#[derive(Clone)]
+struct AppState {
+    cache: PathBuf,
+    manifests: Arc<Mutex<Vec<LxsManifest>>>,
+    last_refresh: Arc<Mutex<SystemTime>>,
+}
+
+fn run(cmd: &str, args: &[&str]) -> Result<(), String> {
+    let out = Command::new(cmd).args(args).output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+fn scan_manifests(cache: &FsPath) -> Vec<LxsManifest> {
+    let mut out = Vec::new();
+    let Ok(names) = std::fs::read_dir(cache) else { return out };
+    for name in names.flatten() {
+        let name_dir = name.path();
+        if !name_dir.is_dir() || name_dir.file_name().map(|n| n == ".git").unwrap_or(false) {
+            continue;
+        }
+        let Ok(versions) = std::fs::read_dir(&name_dir) else { continue };
+        for version in versions.flatten() {
+            let manifest_path = version.path().join("lxs.yml");
+            if !manifest_path.is_file() {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(m) = serde_yaml::from_str::<LxsManifest>(&text) {
+                    out.push(m);
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| format!("{}-{}", a.name, a.version).cmp(&format!("{}-{}", b.name, b.version)));
+    out
+}
+
+fn refresh_registry(state: &AppState) -> Result<(), String> {
+    let cache = &state.cache;
+    if !cache.join(".git").exists() {
+        let _ = std::fs::remove_dir_all(cache);
+        std::fs::create_dir_all(cache.parent().unwrap_or(FsPath::new("."))).map_err(|e| e.to_string())?;
+        run("git", &["clone", "--depth", "1", REGISTRY_URL, &cache.display().to_string()])?;
+    } else {
+        let _ = run("git", &["-C", &cache.display().to_string(), "pull", "--ff-only"]);
+    }
+    let manifests = scan_manifests(cache);
+    *state.manifests.lock().unwrap() = manifests;
+    *state.last_refresh.lock().unwrap() = SystemTime::now();
+    Ok(())
+}
+
+fn maybe_refresh(state: &AppState) {
+    let due = match state.last_refresh.lock() {
+        Ok(ts) => ts.elapsed().map(|d| d >= REFRESH_INTERVAL).unwrap_or(true),
+        Err(_) => true,
+    };
+    if due {
+        let _ = refresh_registry(state);
+    }
+}
+
+#[derive(Serialize)]
+struct CategoryCount {
+    name: String,
+    count: usize,
+}
+
+#[derive(Serialize)]
+struct LxsCard {
+    name: String,
+    version: String,
+    category: String,
+    status: String,
+    publisher: String,
+    summary: String,
+    runtime: String,
+    targets: Vec<String>,
+    source: String,
+    commit: String,
+    docs_available: bool,
+}
+
+#[derive(Serialize)]
+struct LxsDocs {
+    files: Vec<String>,
+    has_openapi: bool,
+    index: String,
+    api: String,
+    examples: String,
+    changelog: String,
+    gotchas: String,
+}
+
+#[derive(Serialize)]
+struct LxsDetail {
+    name: String,
+    domain: String,
+    version: String,
+    category: String,
+    status: String,
+    publisher: String,
+    summary: String,
+    targets: Vec<String>,
+    contract: Contract,
+    runtime: Runtime,
+    provenance: Provenance,
+    release: Vec<String>,
+    versions: Vec<String>,
+    docs: Option<LxsDocs>,
+}
+
+fn load_docs(cache: &FsPath, name: &str, version: &str) -> Option<LxsDocs> {
+    let dir = cache.join(name).join(version).join("docs");
+    if !dir.is_dir() {
+        return None;
+    }
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
+    let mut files: Vec<String> = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    files.sort();
+    Some(LxsDocs {
+        has_openapi: dir.join("openapi.json").is_file(),
+        index: read("README.md"),
+        api: read("api.md"),
+        examples: read("examples.sh"),
+        changelog: read("changelog.md"),
+        gotchas: read("gotchas.md"),
+        files,
+    })
+}
+
+fn latest_by_name(manifests: &[LxsManifest]) -> HashMap<String, &LxsManifest> {
+    let mut latest: HashMap<String, &LxsManifest> = HashMap::new();
+    for m in manifests {
+        let entry = latest.entry(m.name.clone()).or_insert(m);
+        if semver_gt(&m.version, &entry.version) {
+            *entry = m;
+        }
+    }
+    latest
+}
+
+fn semver_gt(a: &str, b: &str) -> bool {
+    let pa = parse_semver(a);
+    let pb = parse_semver(b);
+    (pa.0, pa.1, pa.2) > (pb.0, pb.1, pb.2)
+}
+
+fn parse_semver(v: &str) -> (u64, u64, u64) {
+    let mut it = v.trim_start_matches('v').split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
+async fn api_categories(State(state): State<AppState>) -> axum::Json<serde_json::Value> {
+    maybe_refresh(&state);
+    let manifests = state.manifests.lock().unwrap().clone();
+    let latest = latest_by_name(&manifests);
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for m in latest.values() {
+        let cat = if m.category.is_empty() { "Uncategorized".to_string() } else { m.category.clone() };
+        *counts.entry(cat).or_insert(0) += 1;
+    }
+    let mut list: Vec<CategoryCount> = counts.into_iter().map(|(name, count)| CategoryCount { name, count }).collect();
+    list.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
+    axum::Json(serde_json::json!({ "categories": list }))
+}
+
+async fn api_list_lxs(State(state): State<AppState>, Query(query): Query<HashMap<String, String>>) -> axum::Json<serde_json::Value> {
+    maybe_refresh(&state);
+    let manifests = state.manifests.lock().unwrap().clone();
+    let latest = latest_by_name(&manifests);
+    let category = query.get("category").cloned().unwrap_or_default();
+    let q = query.get("q").cloned().unwrap_or_default().to_lowercase();
+    let mut cards: Vec<LxsCard> = latest
+        .values()
+        .filter(|m| {
+            let cat_ok = category.is_empty() || m.category.eq_ignore_ascii_case(&category);
+            let q_ok = q.is_empty() || m.name.to_lowercase().contains(&q) || m.summary.to_lowercase().contains(&q) || m.domain.to_lowercase().contains(&q);
+            cat_ok && q_ok
+        })
+        .map(|m| LxsCard {
+            name: m.name.clone(),
+            version: m.version.clone(),
+            category: if m.category.is_empty() { "Uncategorized".to_string() } else { m.category.clone() },
+            status: m.status.clone(),
+            publisher: m.publisher.clone(),
+            summary: m.summary.clone(),
+            runtime: m.runtime.base.clone(),
+            targets: m.targets.clone(),
+            source: m.provenance.source.clone(),
+            commit: m.provenance.commit.clone(),
+            docs_available: state.cache.join(&m.name).join(&m.version).join("docs").is_dir(),
+        })
+        .collect();
+    cards.sort_by(|a, b| a.name.cmp(&b.name));
+    axum::Json(serde_json::json!({ "lxs": cards, "count": cards.len() }))
+}
+
+async fn api_lxs_detail(State(state): State<AppState>, Path(name): Path<String>) -> axum::response::Response {
+    maybe_refresh(&state);
+    let manifests = state.manifests.lock().unwrap().clone();
+    let mut versions: Vec<&LxsManifest> = manifests.iter().filter(|m| m.name == name).collect();
+    if versions.is_empty() {
+        return axum::response::IntoResponse::into_response(axum::http::StatusCode::NOT_FOUND);
+    }
+    versions.sort_by(|a, b| {
+        if semver_gt(&a.version, &b.version) {
+            std::cmp::Ordering::Less
+        } else if semver_gt(&b.version, &a.version) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    let latest = versions[0];
+    let release: Vec<String> = latest.release.iter().cloned().collect();
+    let all_versions: Vec<String> = manifests.iter().filter(|m| m.name == name).map(|m| m.version.clone()).collect();
+    let detail = LxsDetail {
+        name: latest.name.clone(),
+        domain: latest.domain.clone(),
+        version: latest.version.clone(),
+        category: latest.category.clone(),
+        status: latest.status.clone(),
+        publisher: latest.publisher.clone(),
+        summary: latest.summary.clone(),
+        targets: latest.targets.clone(),
+        contract: latest.contract.clone(),
+        runtime: latest.runtime.clone(),
+        provenance: latest.provenance.clone(),
+        release,
+        versions: all_versions,
+        docs: load_docs(&state.cache, &name, &latest.version),
+    };
+    axum::response::IntoResponse::into_response(axum::Json(detail))
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Route {
@@ -171,10 +515,21 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .or_else(|| std::env::var("PORT").ok().and_then(|p| p.parse().ok()))
         .unwrap_or(8261);
+    let cache = PathBuf::from(std::env::var("LXS_REGISTRY_CACHE").unwrap_or_else(|_| "/var/lib/lxs-registry".to_string()));
+    let state = AppState {
+        cache,
+        manifests: Arc::new(Mutex::new(Vec::new())),
+        last_refresh: Arc::new(Mutex::new(SystemTime::UNIX_EPOCH)),
+    };
+    let _ = refresh_registry(&state);
     let app = Router::new()
         .route("/", get(render_app_to_stream(|| view! { <App route=Route::Browse name=String::new() /> })))
         .route("/lxs/:name", get(render_detail))
-        .nest_service("/static", ServeDir::new("static"));
+        .route("/api/lxs", get(api_list_lxs))
+        .route("/api/lxs/categories", get(api_categories))
+        .route("/api/lxs/:name", get(api_lxs_detail))
+        .nest_service("/static", ServeDir::new("static"))
+        .with_state(state);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.unwrap();
     println!("[registry-frontend] listening on :{port}");
     axum::serve(listener, app).await.unwrap();
